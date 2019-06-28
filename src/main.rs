@@ -8,6 +8,47 @@ const PATH: &'static str = concat!(env!("CARGO_MANIFEST_DIR"), "/sin_440hz_44100
 
 const FFT_BUFFER_SIZE: usize = 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2;
 
+fn cava_calculate_cutoff_freqs(
+        num_bands: usize,
+        global_lo_cutoff_freq: u32,  // In Hz
+        global_hi_cutoff_freq: u32,  // In Hz
+        sampling_freq: u32,
+        effective_fft_output_len: usize,
+    ) -> (Vec<u32>, Vec<u32>)
+{
+    let freq_const =
+        (global_lo_cutoff_freq as f32 / global_hi_cutoff_freq as f32).log10() /
+        (1.0 / (num_bands as f32 + 1.0) - 1.0)
+    ;
+
+    println!("{}", freq_const);
+
+    let mut lcfs = vec![];
+    let mut hcfs = vec![];
+
+    for n in 0..=num_bands {
+        let power_of_ten = (((n as f32 + 1.0) / (num_bands as f32 + 1.0)) - 1.0) * freq_const;
+
+        let fc = global_hi_cutoff_freq as f32 * 10.0f32.powf(power_of_ten);
+        let fre = fc / (sampling_freq as f32 / 2.0);
+
+        println!("{}, {}, {}, {}", n, power_of_ten, fc, fre);
+
+        let lcf = (fre * effective_fft_output_len as f32) as u32 + 1;
+        lcfs.push(lcf);
+
+        if n > 0 {
+            if lcfs[n] <= lcfs[n - 1] {
+                lcfs[n] = lcfs[n - 1] + 1;
+            }
+
+            hcfs.push(lcfs[n] - 1);
+        }
+    }
+
+    (lcfs, hcfs)
+}
+
 fn _calculate_cutoff_freqs(
         num_bands: usize,
         global_lo_cutoff_freq: u32,  // In Hz
@@ -19,8 +60,17 @@ fn _calculate_cutoff_freqs(
         ) -> Result<(), &'static str> {
     if num_bands == 0 { Err("number of bands must be greater than 0")? }
 
-    if num_bands != lo_cutoff_band_freqs.len() { Err("lcf length does not match")? }
-    if num_bands != hi_cutoff_band_freqs.len() { Err("hcf length does not match")? }
+    if global_lo_cutoff_freq >= global_hi_cutoff_freq { Err("lo cutoff frequency must be less than hi cutoff frequency")? }
+
+    // Taken from https://stackoverflow.com/questions/7778271/logarithmically-spacing-number
+    let delta_base = (global_hi_cutoff_freq as f32 / global_lo_cutoff_freq as f32).powf(1.0 / num_bands as f32);
+
+    let endpoints =
+        (0..=num_bands)
+        .into_iter()
+        .map(|i| global_lo_cutoff_freq as f32 * delta_base.powf(i as f32))
+        .collect::<Vec<_>>()
+    ;
 
     let freq_const =
         (global_lo_cutoff_freq as f32 / global_hi_cutoff_freq as f32).log10() /
@@ -142,5 +192,9 @@ fn find_spectral_peak<P: AsRef<Path>>(filename: P) -> Option<f32> {
 }
 
 fn main() {
-    println!("{:?}", find_spectral_peak(PATH));
+    // println!("{:?}", find_spectral_peak(PATH));
+
+    let (lcfs, hcfs) = cava_calculate_cutoff_freqs(12, 50, 25000, 44100, 256);
+    println!("{:?}", lcfs);
+    println!("{:?}", hcfs);
 }
