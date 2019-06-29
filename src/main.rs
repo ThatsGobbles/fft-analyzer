@@ -8,7 +8,7 @@ const PATH: &'static str = concat!(env!("CARGO_MANIFEST_DIR"), "/sin_440hz_44100
 
 const FFT_BUFFER_SIZE: usize = 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2;
 
-fn cava_calculate_cutoff_freqs(
+fn _cava_calculate_cutoff_freqs(
         num_bands: usize,
         global_lo_cutoff_freq: u32,  // In Hz
         global_hi_cutoff_freq: u32,  // In Hz
@@ -32,7 +32,7 @@ fn cava_calculate_cutoff_freqs(
         let fc = global_hi_cutoff_freq as f32 * 10.0f32.powf(power_of_ten);
         let fre = fc / (sampling_freq as f32 / 2.0);
 
-        println!("{}, {}, {}, {}", n, power_of_ten, fc, fre);
+        // println!("{}, {}, {}, {}", n, power_of_ten, fc, fre);
 
         let lcf = (fre * effective_fft_output_len as f32) as u32 + 1;
         lcfs.push(lcf);
@@ -48,6 +48,47 @@ fn cava_calculate_cutoff_freqs(
 
     (lcfs, hcfs)
 }
+
+fn _assign_fft_bins_to_bands(
+    fft_buffer_size: usize,
+    num_bands: u32,
+    sampling_freq: u32,
+    lo_cutoff_freq: u32,
+    hi_cutoff_freq: u32,
+) -> (Vec<f32>, Vec<f32>) {
+    assert!(fft_buffer_size > 0);
+    assert!(num_bands > 0);
+    assert!(hi_cutoff_freq < sampling_freq / 2);
+    assert!(lo_cutoff_freq < hi_cutoff_freq);
+
+    // A.K.A. The frequency resolution.
+    let freq_bin_size = sampling_freq as f32 / fft_buffer_size as f32;
+
+    // Only take the first half of the frequency bins.
+    // This due to the Nyquist–Shannon sampling theorem,
+    // and the fact that the latter half represent negative frequencies.
+    let freq_bins = (0..=(fft_buffer_size / 2))
+        .into_iter()
+        .map(|k| freq_bin_size * k as f32)
+        .collect::<Vec<_>>()
+    ;
+
+    // Given the low cutoff frequency, and the number of desired bands, calculate a logarithmic spread.
+    // Taken from https://stackoverflow.com/questions/7778271/logarithmically-spacing-number
+    let delta_base = (hi_cutoff_freq as f32 / lo_cutoff_freq as f32).powf(1.0 / num_bands as f32);
+    let mut band_intervals =
+        (0..num_bands)
+        .into_iter()
+        .map(|i| lo_cutoff_freq as f32 * delta_base.powf(i as f32))
+        .collect::<Vec<_>>()
+    ;
+    band_intervals.push(hi_cutoff_freq as f32);
+
+    (freq_bins, band_intervals)
+}
+
+// If the DFT input consists of N samples that are sampled with frequency Fs,
+// the output of the DFT corresponds to the frequencies F = [0, Fs/N, 2*Fs/N, ..., (N−1)*Fs/N].
 
 fn _calculate_cutoff_freqs(
         num_bands: usize,
@@ -194,7 +235,11 @@ fn find_spectral_peak<P: AsRef<Path>>(filename: P) -> Option<f32> {
 fn main() {
     // println!("{:?}", find_spectral_peak(PATH));
 
-    let (lcfs, hcfs) = cava_calculate_cutoff_freqs(12, 50, 25000, 44100, 256);
-    println!("{:?}", lcfs);
-    println!("{:?}", hcfs);
+    // let (lcfs, hcfs) = cava_calculate_cutoff_freqs(256, 5000, 10000, 44100, 256);
+    // println!("{:?}", lcfs);
+    // println!("{:?}", hcfs);
+
+    let (f, e) = _assign_fft_bins_to_bands(128, 12, 44100, 20, 10000);
+    println!("{} {:?}", f.len(), f);
+    println!("{} {:?}", e.len(), e);
 }
