@@ -6,7 +6,32 @@ use rustfft::num_complex::Complex;
 
 const PATH: &'static str = concat!(env!("CARGO_MANIFEST_DIR"), "/sin_440hz_44100hz_samp.wav");
 
-const FFT_BUFFER_SIZE: usize = 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2;
+fn band_partitioning_octaves(sampling_freq: f32, base_freq: f32, num_bands: u16) -> Vec<(f32, f32)> {
+    assert!(base_freq < sampling_freq / 2.0);
+    assert!(base_freq > 0.0);
+    assert!(num_bands > 0);
+
+    let octave_factor = num_bands as f32 / ((sampling_freq / base_freq).log2() - 1.0);
+    let exp = 1.0 / octave_factor;
+
+    let factor = 2.0f32.powf(-exp);
+
+    let mut partitions = Vec::with_capacity(num_bands as usize);
+
+    let mut curr_upper_limit = sampling_freq / 2.0;
+
+    for _ in 0..num_bands {
+        let curr_lower_limit = curr_upper_limit * factor;
+
+        partitions.push((curr_lower_limit, curr_upper_limit));
+
+        curr_upper_limit = curr_lower_limit;
+    }
+
+    partitions.reverse();
+
+    partitions
+}
 
 fn _cava_calculate_cutoff_freqs(
         num_bands: usize,
@@ -85,6 +110,50 @@ fn _assign_fft_bins_to_bands(
     band_intervals.push(hi_cutoff_freq as f32);
 
     (freq_bins, band_intervals)
+}
+
+// pub struct BandIntervals(Vec<f32>, f32);
+
+// impl BandIntervals {
+//     pub fn new(num_bands: u16, lo_cutoff_freq: u32, hi_cutoff_freq: u32) -> Result<Self, &'static str> {
+//         if num_bands == 0 { Err("number of bands must be greater than zero")? }
+
+//         // Given the low cutoff frequency, and the number of desired bands, calculate a logarithmic spread.
+//         // Taken from https://stackoverflow.com/questions/7778271/logarithmically-spacing-number
+//         let delta_base = (hi_cutoff_freq as f32 / lo_cutoff_freq as f32).powf(1.0 / num_bands as f32);
+//         let mut band_intervals =
+//             (0..num_bands)
+//             .into_iter()
+//             .map(|i| lo_cutoff_freq as f32 * delta_base.powf(i as f32))
+//             .collect::<Vec<_>>()
+//         ;
+//     }
+// }
+
+/// Determines what band interval a target frequency belongs to.
+fn locate_band_for_freq(target_freq: u32, band_intervals: &[f32]) -> Option<usize> {
+    if band_intervals.len() == 0 { return None }
+
+    let target_freq_f = target_freq as f32;
+
+    if let Some(f0) = band_intervals.first() {
+        if target_freq_f < *f0 { return None }
+    }
+
+    if let Some(f1) = band_intervals.last() {
+        if target_freq_f >= *f1 { return None }
+    }
+
+    // let lo = band_intervals
+
+    // for (band_num, band_cutoff) in band_intervals.into_iter().enumerate() {
+    //     if target_freq_f < *band_cutoff {
+    //         if band_num == 0 { return None }
+    //         else
+    //     }
+    // }
+
+    None
 }
 
 // If the DFT input consists of N samples that are sampled with frequency Fs,
@@ -213,6 +282,7 @@ fn find_spectral_peak<P: AsRef<Path>>(filename: P) -> Option<f32> {
 
     let mut signal = reader.samples::<i32>()
         .map(|x| Complex::from(x.unwrap() as f32))
+        // .take(num_samples)
         .collect::<Vec<_>>();
 
     let mut spectrum = signal.clone();
@@ -233,13 +303,16 @@ fn find_spectral_peak<P: AsRef<Path>>(filename: P) -> Option<f32> {
 }
 
 fn main() {
-    // println!("{:?}", find_spectral_peak(PATH));
+    println!("{:?}", find_spectral_peak(PATH));
 
     // let (lcfs, hcfs) = cava_calculate_cutoff_freqs(256, 5000, 10000, 44100, 256);
     // println!("{:?}", lcfs);
     // println!("{:?}", hcfs);
 
-    let (f, e) = _assign_fft_bins_to_bands(128, 12, 44100, 20, 10000);
-    println!("{} {:?}", f.len(), f);
-    println!("{} {:?}", e.len(), e);
+    // let (f, e) = _assign_fft_bins_to_bands(128, 12, 44100, 20, 10000);
+    // println!("{} {:?}", f.len(), f);
+    // println!("{} {:?}", e.len(), e);
+
+    let partitions = band_partitioning_octaves(44100.0, 10.0, 16);
+    println!("{:?}", partitions);
 }
