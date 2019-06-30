@@ -20,8 +20,11 @@ fn band_partitioning_octaves(sampling_freq: f32, base_freq: f32, num_bands: u16)
 
     let mut curr_upper_limit = sampling_freq / 2.0;
 
-    for _ in 0..num_bands {
-        let curr_lower_limit = curr_upper_limit * factor;
+    for i in 1..=num_bands {
+        let curr_lower_limit =
+            if i == num_bands && base_freq < curr_upper_limit { base_freq }
+            else { curr_upper_limit * factor }
+        ;
 
         partitions.push((curr_lower_limit, curr_upper_limit));
 
